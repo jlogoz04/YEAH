@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import sqlite3 from 'sqlite3';
 import basicAuth from 'express-basic-auth';
-import fs from 'fs';
+import fs from 'fs';                 // <-- no $1
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,7 +11,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Where to store the sqlite file (locally uses ./data/league.db; on Render set DB_FILE=/data/league.db)
+// Where to store the sqlite file
+// (Locally uses ./data/league.db; on Render set DB_FILE=/data/league.db)
 const DB_FILE = process.env.DB_FILE || path.join(__dirname, 'data', 'league.db');
 fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 
@@ -20,6 +21,7 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use('/public', express.static(path.join(__dirname, 'public')));
+
 
 const db = new sqlite3.Database(DB_FILE);
 db.serialize(() => {
