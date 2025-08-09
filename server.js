@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import sqlite3 from 'sqlite3';
 import basicAuth from 'express-basic-auth';
-import fs from 'fs';                 // <-- no $1
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
