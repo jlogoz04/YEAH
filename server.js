@@ -23,23 +23,31 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
+// ---------- DB bootstrap ----------
 async function init() {
-  await pool.query(`CREATE TABLE IF NOT EXISTS teams (
-    code TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    color1 TEXT NOT NULL,
-    color2 TEXT NOT NULL
-  )`);
-  await pool.query(`CREATE TABLE IF NOT EXISTS fixtures (
-    id SERIAL PRIMARY KEY,
-    round INTEGER NOT NULL,
-    home_code TEXT NOT NULL REFERENCES teams(code),
-    away_code TEXT NOT NULL REFERENCES teams(code),
-    home_goals INTEGER,
-    away_goals INTEGER
-  )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS teams (
+      code TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color1 TEXT NOT NULL,
+      color2 TEXT NOT NULL
+    )
+  `);
 
-  const { rows: [{ c: teamCount }] } = await pool.query('SELECT COUNT(*)::int AS c FROM teams');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fixtures (
+      id SERIAL PRIMARY KEY,
+      round INTEGER NOT NULL,
+      home_code TEXT NOT NULL REFERENCES teams(code),
+      away_code TEXT NOT NULL REFERENCES teams(code),
+      home_goals INTEGER,
+      away_goals INTEGER
+    )
+  `);
+
+  // Seed teams
+  const teamCountRes = await pool.query('SELECT COUNT(*)::int AS c FROM teams');
+  const teamCount = Number(teamCountRes.rows[0]?.c || 0);
   if (teamCount === 0) {
     const teams = [
       ['TIG','Camden Tigers','#FF8C00','#000000'],
@@ -53,14 +61,16 @@ async function init() {
       ['STM','St Marys Eaglevale','#DAA520','#006400'],
       ['GRH','Gregory Hills Stallions','#800080','#FFD700']
     ];
-    const values = teams.map((_, i) => `($${i*4+1}, $${i*4+2}, $${i*4+3}, $${i*4+4})`).join(',');
+    const placeholders = teams.map((_, i) => `($${i*4+1}, $${i*4+2}, $${i*4+3}, $${i*4+4})`).join(',');
     await pool.query(
-      `INSERT INTO teams(code,name,color1,color2) VALUES ${values}`,
+      `INSERT INTO teams(code,name,color1,color2) VALUES ${placeholders}`,
       teams.flat()
     );
   }
 
-  const { rows: [{ c: fxCount }] } = await pool.query('SELECT COUNT(*)::int AS c FROM fixtures');
+  // Seed fixtures
+  const fxCountRes = await pool.query('SELECT COUNT(*)::int AS c FROM fixtures');
+  const fxCount = Number(fxCountRes.rows[0]?.c || 0);
   if (fxCount === 0) {
     const parse = (round, list) => list.map(pair => {
       const [home, away] = pair.split('v');
@@ -87,30 +97,31 @@ async function init() {
       parse(18, ['GSC v TIG','STM v GRH','NAR v CAM','OPR v HAR','ESC v TAH'])
     ];
     const all = rounds.flat();
-    const values = all.map((_, i) => `($${i*3+1}, $${i*3+2}, $${i*3+3})`).join(',');
+    const placeholders = all.map((_, i) => `($${i*3+1}, $${i*3+2}, $${i*3+3})`).join(',');
     await pool.query(
-      `INSERT INTO fixtures(round,home_code,away_code) VALUES ${values}`,
+      `INSERT INTO fixtures(round,home_code,away_code) VALUES ${placeholders}`,
       all.flatMap(m => [m.round, m.home, m.away])
     );
   }
 }
 
+// ---------- Data helpers ----------
 async function getAllTeams(){
-  const { rows } = await pool.query('SELECT * FROM teams ORDER BY name');
-  return rows;
+  const r = await pool.query('SELECT * FROM teams ORDER BY name');
+  return r.rows;
 }
 async function getAllFixtures(){
-  const { rows } = await pool.query(`
+  const r = await pool.query(`
     SELECT f.*, th.name AS home_name, ta.name AS away_name
     FROM fixtures f
     JOIN teams th ON f.home_code = th.code
     JOIN teams ta ON f.away_code = ta.code
     ORDER BY round, id
   `);
-  return rows;
+  return r.rows;
 }
 async function getFixturesForRound(round){
-  const { rows } = await pool.query(`
+  const r = await pool.query(`
     SELECT f.*, th.name AS home_name, ta.name AS away_name,
            th.color1 AS h1, th.color2 AS h2, ta.color1 AS a1, ta.color2 AS a2
     FROM fixtures f
@@ -119,9 +130,10 @@ async function getFixturesForRound(round){
     WHERE round = $1
     ORDER BY id
   `, [round]);
-  return rows;
+  return r.rows;
 }
 
+// ---------- Ladder & stats ----------
 function computeLadderForRound(round, teams, fixtures){
   const table = {};
   teams.forEach(t => table[t.code] = { code:t.code, name:t.name, played:0,wins:0,draws:0,losses:0,gf:0,ga:0,gd:0,pts:0 });
@@ -186,6 +198,7 @@ async function computeStats(){
   return { highestScorelines, biggestWins, mostWins, mostDraws, mostLosses, leastGoalsTeams, mostGoalsTeams };
 }
 
+// ---------- Routes ----------
 app.get('/', (req,res)=>res.redirect('/ladder'));
 
 app.get('/ladder', async (req,res)=>{
@@ -257,4 +270,3 @@ init().then(()=>{
   console.error('Failed to init DB:', err);
   process.exit(1);
 });
-
